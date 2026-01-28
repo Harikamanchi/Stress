@@ -1,35 +1,62 @@
 import streamlit as st
-import joblib
+import pickle
 import re
 import nltk
+from tensorflow.keras.models import load_model
+from tensorflow.keras.preprocessing.sequence import pad_sequences
 from nltk.corpus import stopwords
-from nltk.stem import WordNetLemmatizer
 
+# =========================
+# NLTK setup (SAFE)
+# =========================
 nltk.download('stopwords')
-nltk.download('wordnet')
-
-model = joblib.load("stress_model.pkl")
-tfidf = joblib.load("tfidf.pkl")
 
 stop_words = set(stopwords.words('english'))
-lemmatizer = WordNetLemmatizer()
 
-def preprocess(text):
+# =========================
+# Load model & tokenizer
+# =========================
+model = load_model("stress_bilstm_model.h5")
+
+with open("tokenizer.pkl", "rb") as f:
+    tokenizer = pickle.load(f)
+
+# =========================
+# Text preprocessing
+# (NO LEMMATIZATION → SAFE)
+# =========================
+def preprocess_text(text):
     text = text.lower()
-    text = re.sub(r'[^a-z\s]', ' ', text)
-    words = [w for w in text.split() if w not in stop_words]
-    words = [lemmatizer.lemmatize(w) for w in words]
+    text = re.sub(r'[^a-z\s]', '', text)
+    words = text.split()
+    words = [w for w in words if w not in stop_words]
     return " ".join(words)
 
-st.title("🧠 Stress Detection (NLP)")
-user_text = st.text_area("Enter text")
+# =========================
+# Streamlit UI
+# =========================
+st.set_page_config(page_title="Stress Detection using NLP")
+
+st.title("🧠 Stress Detection using NLP")
+st.write("Enter a sentence to detect stress level")
+
+user_input = st.text_area("Enter text here")
+
+THRESHOLD = 0.6
 
 if st.button("Predict"):
-    if user_text.strip():
-        clean = preprocess(user_text)
-        vec = tfidf.transform([clean])
-        pred = model.predict(vec)[0]
-        st.success("⚠️ Stress Detected" if pred==1 else "✅ No Stress")
-    else:
+    if user_input.strip() == "":
         st.warning("Please enter some text")
+    else:
+        processed = preprocess_text(user_input)
+        seq = tokenizer.texts_to_sequences([processed])
+        padded = pad_sequences(seq, maxlen=100)
 
+        pred_prob = model.predict(padded)[0][0]
+
+        st.write(f"🔍 Stress Probability: {pred_prob:.2f}")
+
+        if pred_prob >= THRESHOLD:
+            st.error("⚠️ Stress Detected")
+        else:
+            st.success("✅ No Stress Detected")
